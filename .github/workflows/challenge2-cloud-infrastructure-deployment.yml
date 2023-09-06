@@ -1,0 +1,92 @@
+name: Challenge 2 - Cloud Infrastructure Deployment
+
+on: 
+  workflow_dispatch:
+  push:
+   branches: [ main ]
+
+env:
+    RESOURCE_GROUP_LOCATION: 'westeurope'
+    RESOURCE_GROUP_NAME: 'novorender'
+    
+    STATIC_WEB_APP_NAME: 'novorender-pg-swa'
+  
+    AZURE_CLI_VERSION: '2.30.0'
+
+    BICEP_FILE: './devops/static-web-app/iac/main.bicep'
+
+jobs:
+  Infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout code
+    - uses: actions/checkout@main
+      name: Code Checkout
+
+      # Log into Azure
+    - uses: azure/login@v1
+      name: Azure Login
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Create Resource Group
+    - uses: Azure/CLI@v1
+      name: Resource Group Creation
+      with:
+        inlineScript: |
+          #!/bin/bash
+          az group create --name ${{ env.RESOURCE_GROUP_NAME }} --location ${{ env.RESOURCE_GROUP_LOCATION }}
+          echo "Azure resource group created"
+
+      # Deploy Bicep file
+    - name: Infrastructure Deployment
+      uses: azure/arm-deploy@v1
+      with:
+        resourceGroupName: ${{ env.RESOURCE_GROUP_NAME }}
+        scope: resourcegroup
+        region: westeurope
+        template: ${{ env.BICEP_FILE}}
+        parameters: 'staticWebAppName=${{ env.STATIC_WEB_APP_NAME }} staticAppSku=Standard'
+        failOnStdErr: false
+
+  WebApp:
+    needs: Infrastructure  
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout code
+      - uses: actions/checkout@main
+        name: Code Checkout
+
+      # Log into Azure
+      - uses: azure/login@v1
+        name: Azure Login
+        with:
+            creds: ${{ secrets.AZURE_CREDENTIALS }}
+            enable-AzPSSession: true
+
+      # get deployment token
+      - name: "Add a mask to the SWA Token"
+        uses: azure/CLI@v1
+        with:
+            azcliversion: ${{ env.AZURE_CLI_VERSION }}
+            inlineScript: | 
+                    echo "::add-mask::$(az staticwebapp secrets list -n ${{ env.STATIC_WEB_APP_NAME }} | jq -r '.properties.apiKey')"
+      - name: "Get SWA Token"
+        uses: azure/CLI@v1
+        with:
+            azcliversion: ${{ env.AZURE_CLI_VERSION }}
+            inlineScript: |
+                        echo "SWA_TOKEN=$(az staticwebapp secrets list -n ${{ env.STATIC_WEB_APP_NAME }} | jq -r '.properties.apiKey')" >> $GITHUB_ENV
+
+      - name: Build And Deploy Static web page
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          # parameter descriptions at: https://aka.ms/swaworkflowconfig
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
+          action: "upload"
+          skip_app_build: true
+          skip_api_build: true
+          app_location: "devops/static-web-app/public"
+          api_location: ""

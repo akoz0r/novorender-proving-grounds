@@ -46,7 +46,7 @@ jobs:
         scope: resourcegroup
         region: westeurope
         template: ${{ env.BICEP_FILE}}
-        parameters: 'staticWebAppName=${{ env.STATIC_WEB_APP_NAME }} staticAppSku=Standard'
+        parameters: 'staticWebAppName=${{ env.STATIC_WEB_APP_NAME }}'
         failOnStdErr: false
 
   WebApp:
